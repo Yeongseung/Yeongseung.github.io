@@ -1,0 +1,37 @@
+baseURL: "https://Yeongseung.github.io/"
+title: "Yeongseung's Blog"
+theme: "PaperMod"
+
+enableRobotsTXT: true
+buildDrafts: false
+buildFuture: false
+buildExpired: false
+
+params:
+  env: production
+  title: "Yeongseung's Blog"
+  description: "My personal blog and portfolio"
+  keywords: [Blog, Portfolio, PaperMod]
+  author: Yeongseung
+  
+  # Default Theme (auto / dark / light)
+  defaultTheme: auto
+  disableThemeToggle: false
+
+  # UI Options
+  ShowReadingTime: true
+  ShowShareButtons: true
+  ShowPostNavLinks: true
+  ShowBreadCrumbs: true
+  ShowCodeCopyButtons: true
+  ShowWordCount: true
+  
+  # The text that appears on your homepage
+  homeInfoParams:
+    Title: "Hi there 👋"
+    Content: "Welcome to my blog using Hugo PaperMod!"
+    
+  # Add your GitHub link here
+  socialIcons:
+    - name: github
+      url: "https://github.com/your-github-username"
