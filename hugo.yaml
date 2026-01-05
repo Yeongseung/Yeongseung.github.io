@@ -29,9 +29,9 @@ params:
   # The text that appears on your homepage
   homeInfoParams:
     Title: "Hi there 👋"
-    Content: "Welcome to my blog using Hugo PaperMod!"
+    Content: "Welcome!"
     
   # Add your GitHub link here
   socialIcons:
     - name: github
-      url: "https://github.com/your-github-username"
+      url: "https://github.com/Yeongseung"
