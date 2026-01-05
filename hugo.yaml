@@ -22,10 +22,12 @@ params:
   ShowReadingTime: true
   ShowShareButtons: true
   ShowPostNavLinks: true
-  ShowBreadCrumbs: true
+  ShowBreadCrumbs: false
   ShowCodeCopyButtons: true
   ShowWordCount: true
   
+  #Table of content
+  ShowToc: true
   # The text that appears on your homepage
   homeInfoParams:
     Title: "Hi there 👋"
@@ -41,10 +43,6 @@ params:
 # Add this to the bottom of your main hugo.yaml
 menu:
   main:
-    - identifier: categories
-      name: Categories
-      url: /categories/
-      weight: 10
     - identifier: tags
       name: Tags
       url: /tags/
@@ -53,6 +51,10 @@ menu:
       name: Search
       url: /search/
       weight: 30
+    - identifier: archives   # <--- New Archive Button
+      name: Archive
+      url: /archives/
+      weight: 10             # Lower number = appears further left
 
 # REQUIRED for search to work!
 outputs:
