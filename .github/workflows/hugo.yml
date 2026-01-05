@@ -55,6 +55,21 @@ jobs:
         with:
           path: ./public
 
+menu:
+  main:
+    - identifier: categories
+      name: Categories
+      url: /categories/
+      weight: 10
+    - identifier: tags
+      name: Tags
+      url: /tags/
+      weight: 20
+    - identifier: search
+      name: Search
+      url: /search/
+      weight: 30
+
   # Deployment job
   deploy:
     environment:
