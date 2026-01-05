@@ -35,3 +35,28 @@ params:
   socialIcons:
     - name: github
       url: "https://github.com/Yeongseung"
+
+# ... (your existing settings like title, baseURL, params) ...
+
+# Add this to the bottom of your main hugo.yaml
+menu:
+  main:
+    - identifier: categories
+      name: Categories
+      url: /categories/
+      weight: 10
+    - identifier: tags
+      name: Tags
+      url: /tags/
+      weight: 20
+    - identifier: search
+      name: Search
+      url: /search/
+      weight: 30
+
+# REQUIRED for search to work!
+outputs:
+  home:
+    - HTML
+    - RSS
+    - JSON
