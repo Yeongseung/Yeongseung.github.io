@@ -159,7 +159,7 @@ Was my model not large enough or not structured well to memorize all the past in
 If the problem mainly caused from forgetting previous expriences, there could be several ways to mitigate this. [(Mnih et al., 2013)](https://arxiv.org/abs/1312.5602) says that leveraging **Experience replay** is effective to reduce data correlation and to smooth the training distribution. Intuitively, I believe that you can easily see why Experience replay can reduce data correlation because experience replay allows us to randomly choose samples from several saved episodes, not consecutively. Then what does it mean that Experience Replay "smooths the training distribution?"
 
 <figure class="figure-center">
-  <img src="/posts/Mastering_CartPole/Distributions.png" width="700">
+  <img src="/posts/Mastering_CartPole/distributions.png" width="700">
   <figcaption>Figure 3. Example distributions</figcaption>
 </figure>
 
