@@ -5,8 +5,7 @@ title: 'Stabilizing Q-Learning in CartPole'
 
 tags: ["CartPole", "Reinforcement Learning"]
 ---
-(Writing)
-# intro
+# Introduction
 
 If you are interested in reinforcement learning, you have probably heard of  [CartPole](https://gymnasium.farama.org/environments/classic_control/cart_pole/), often considered the "Hello World" environment of the field. This is partly because the task is simple to understand, and partly because each episode ends quickly, allowing you to observe learning progress within a short time.
 
@@ -19,7 +18,7 @@ Looking back, I have run many experiments in CartPole before, but not in a struc
 
 # Experiments
 
-## 1. Concept of Q-Learning
+## 1. From TD Learning to Q-Learning
 Intuitively, Q-learning can be viewed as a member of the Temporal-Difference (TD) family of methods. TD learning focuses on updating the value function directly, rather than optimizing the policy explicitly. We can consider $V(S_t)$ as the prediction $\hat{y}$ and $R_{t+1}+\gamma V(S_{t+1})$ as the target $y$.
 
 <div>
@@ -52,7 +51,7 @@ loss = criterion(current_value, target_value)
 
 However, the `(select a action to take somehow)` part is a major challenge. $V(s)$ itself doesn't contain information about what action should be taken. If the environment were simple and deterministic, such as Chess or Go, then we could simulate all actions from $S_t$ and calculate all $V(S_{t+1})$ without actually taking those actions. With all possible $V(S_{t+1})$ values in hand, we could finally select an action by choosing the one leading to the state with the best value. 
 
-### SARSA
+## 2. SARSA
 That's where the action-value function Q is effective. $V(S_t) = \max_{a}Q(S_t,a)$. Below is the SARSA algorithm, which leverages the action-value function Q. As you will see, we can now choose the next action without actually taking it or simulating it.
 
 <details>
@@ -167,7 +166,7 @@ In CartPole there are four scalars in the state, but let's think about only one 
 
 To build a robust model, the agent must learn from a comprehensive distribution that covers the entire state space. Experience Replay addresses this by randomly sampling from a diverse history of episodes. If the experience buffer successfully saves diverse scenarios, it can reconstruct a broad distribution that encompasses all scenarios.
 
-### Q-learning
+## 3. Q-learning
 
 Okay, I decided to use Experience Replay, but SARSA is incompatible with it because SARSA is an on-policy algorithm. So, it's time to move on to Q-learning. Q-learning is an off-policy algorithm, which means we can leverage Experience Replay, and it's similar to SARSA. 
 
@@ -203,7 +202,7 @@ Let's check the results.
 
 The results seem not that different from those of SARSA.
 
-### Q-learning with Experience Replay
+## 4. Q-learning with Experience Replay
 Okay, I set the capacity of the replay buffer to 10,000, the batch size to 32, and the update (training) frequency to every four steps. Let's see the results.
 
 <figure class="figure-center">
@@ -222,7 +221,7 @@ Surprisingly, many things changed. **First**, the episode-total reward plot beca
 
 So, the problem is still forgetting, which, I believe, cannot be solved by target networks, Double DQN, or Dueling DQN alone. Intuitively, even when the episodes become full of successful experiences, the buffer still has to keep unsuccessful experiences and how to recover from them.
 
-### Dual Buffer
+## 5. Dual Buffer
 The dual buffer idea is to separate successful experiences from unsuccessful experiences, and sample from them by a fixed ratio like 7:3. I think this could be a direct remedy for periodic drops. I set the capacities of the successful buffer and unsuccessful buffer to 5000 each, with the same batch size of 32. Let's see the results.
 
 <figure class="figure-center">
@@ -237,7 +236,7 @@ The dual buffer idea is to separate successful experiences from unsuccessful exp
 
 Logically, I believe adding a dual buffer was the right approach, but it hasn't solved the periodic drop problem so far. In the meantime, the Q-values became too high and the TD error skyrocketed. I think we should solve this problem first.
 
-### Double DQN
+## 6. Double DQN
 The idea of separating the main Q-network and the target Q-network is a well-known solution for Q-value overestimation. The reason I didn't use this idea earlier was that I thought the dual buffer could solve the periodic drop problem even without separating the Q-networks. Anyway, let's see the results.
 
 <figure class="figure-center">
@@ -270,6 +269,8 @@ For example, even when the buffer is filled with 500-reward experiences, if the 
 </figure>
 
 </details>
+
+## 7. Refining Buffer Strategy
 
 ### Back to the buffer
 Okay, let's go back to buffer modification. I noticed that the Q-values tended to drift upward as the steps progressed, which was especially obvious before implementing Double DQN. **My theory here is that** because I defined the "unsuccessful buffer" as simply the storage storing every state of episodes where the total reward was less than 500, the buffer eventually became saturated with "long" unsuccessful experiences.
@@ -319,7 +320,7 @@ As shown in the upper figures, reaching a stable score of 500 could take a consi
 
 To avoid slow learning and to be more robust, I believe the Q-network should learn incrementally rather than attempting to jump directly from failures to 'lucky' successful cases. To address this, I am considering removing the successful buffer and instead maintaining a "normal" buffer, which stores all states except for failures, alongside the failure buffer. This normal buffer could effectively facilitate the incremental connection between failure and success.
 
-### Just Normal buffer and failure buffer
+### Normal Buffer and Failure Buffer
 Let's check the results.
 
 <figure class="figure-center">
@@ -336,7 +337,7 @@ The plot looks prettier than before. I think this change is beneficial for two r
 
 Now, I think changing the sampling ratio from the two buffers, which was 7:3, might improve the stability.
 
-### Sampling ratio
+### Adjusting Sampling Ratio
 Let's try 6:4.
 
 <figure class="figure-center">
