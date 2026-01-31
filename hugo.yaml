@@ -25,6 +25,8 @@ params:
   ShowBreadCrumbs: false
   ShowCodeCopyButtons: true
   ShowWordCount: true
+
+  math: true
   
   #Table of content
   ShowToc: true
@@ -38,9 +40,6 @@ params:
     - name: github
       url: "https://github.com/Yeongseung"
 
-# ... (your existing settings like title, baseURL, params) ...
-
-# Add this to the bottom of your main hugo.yaml
 menu:
   main:
     - identifier: tags
@@ -51,12 +50,12 @@ menu:
       name: Search
       url: /search/
       weight: 30
-    - identifier: archives   # <--- New Archive Button
+    - identifier: archives   # Archive Button
       name: Archive
       url: /archives/
       weight: 10             # Lower number = appears further left
 
-# REQUIRED for search to work!
+#for search
 outputs:
   home:
     - HTML
