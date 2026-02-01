@@ -7,7 +7,7 @@ tags: ["CartPole", "Reinforcement Learning"]
 ---
 # Introduction
 
-If you are interested in reinforcement learning, you have probably heard of  [CartPole](https://gymnasium.farama.org/environments/classic_control/cart_pole/), often considered the "Hello World" environment of the field. This is partly because the task is simple to understand, and partly because each episode ends quickly, allowing you to observe learning progress within a short time.
+If you are interested in reinforcement learning, you have probably heard of [CartPole](https://gymnasium.farama.org/environments/classic_control/cart_pole/) [[6]](#ref-6), often considered the "Hello World" environment of the field. This is partly because the task is simple to understand, and partly because each episode ends quickly, allowing you to observe learning progress within a short time.
 
 <figure class="figure-center">
   <img src="/posts/Mastering_CartPole/cartpole.png" width="300">
@@ -16,10 +16,12 @@ If you are interested in reinforcement learning, you have probably heard of  [Ca
 
 Looking back, I have run many experiments in CartPole before, but not in a structured or systematic way, which caused me to forget most of the details over time. In this post, I aim to consolidate those trials into a coherent narrative, focusing in particular on why Q-learning can become unstable and how techniques such as experience replay, Double DQN, and failure-focused sampling can improve robustness.
 
+> **Full implementation code on GitHub:** [stabilizing-q-learning-cartpole](https://github.com/Yeongseung/stabilizing-q-learning-cartpole)
+
 # Experiments
 
 ## 1. From TD Learning to Q-Learning
-Intuitively, Q-learning can be viewed as a member of the Temporal-Difference (TD) family of methods. TD learning focuses on updating the value function directly, rather than optimizing the policy explicitly. We can consider $V(S_t)$ as the prediction $\hat{y}$ and $R_{t+1}+\gamma V(S_{t+1})$ as the target $y$.
+Intuitively, Q-learning can be viewed as a member of the Temporal-Difference (TD) family of methods [[1]](#ref-1). TD learning focuses on updating the value function directly, rather than optimizing the policy explicitly. We can consider $V(S_t)$ as the prediction $\hat{y}$ and $R_{t+1}+\gamma V(S_{t+1})$ as the target $y$.
 
 <div>
 $$
@@ -52,7 +54,9 @@ loss = criterion(current_value, target_value)
 However, the `(select a action to take somehow)` part is a major challenge. $V(s)$ itself doesn't contain information about what action should be taken. If the environment were simple and deterministic, such as Chess or Go, then we could simulate all actions from $S_t$ and calculate all $V(S_{t+1})$ without actually taking those actions. With all possible $V(S_{t+1})$ values in hand, we could finally select an action by choosing the one leading to the state with the best value. 
 
 ## 2. SARSA
-That's where the action-value function Q is effective. $V(S_t) = \max_{a}Q(S_t,a)$. Below is the SARSA algorithm, which leverages the action-value function Q. As you will see, we can now choose the next action without actually taking it or simulating it.
+That's where the action-value function Q is effective. $V(S_t) = \max_{a}Q(S_t,a)$. Below is the SARSA algorithm [[1]](#ref-1), which leverages the action-value function Q. As you will see, we can now choose the next action without actually taking it or simulating it.
+
+> **Code:** [`1.SARSA_cartpole.py`](https://github.com/Yeongseung/stabilizing-q-learning-cartpole/blob/main/1.SARSA_cartpole.py)
 
 <details>
 <summary><b>Click to see the SARSA torch code</b></summary>
@@ -155,7 +159,7 @@ Was my model not large enough or not structured well to memorize all the past in
 
 > 3. FORGETTING?
 
-If the problem is mainly caused by forgetting previous experiences, there could be several ways to mitigate this. [(Mnih et al., 2013)](https://arxiv.org/abs/1312.5602) says that leveraging **Experience Replay** is effective for reducing data correlation and smoothing the training distribution. Intuitively, it's easy to see why Experience Replay can reduce data correlation—it allows us to randomly sample from several saved episodes rather than processing them consecutively. Then what does it mean that Experience Replay "smooths the training distribution?"
+If the problem is mainly caused by forgetting previous experiences, there could be several ways to mitigate this. Mnih et al. [[2]](#ref-2) demonstrated that leveraging **Experience Replay** is effective for reducing data correlation and smoothing the training distribution. Intuitively, it's easy to see why Experience Replay can reduce data correlation—it allows us to randomly sample from several saved episodes rather than processing them consecutively. Then what does it mean that Experience Replay "smooths the training distribution?"
 
 <figure class="figure-center">
   <img src="/posts/Mastering_CartPole/distributions.png" width="700">
@@ -171,6 +175,8 @@ To build a robust model, the agent must learn from a comprehensive distribution 
 Okay, I decided to use Experience Replay, but SARSA is incompatible with it because SARSA is an on-policy algorithm. So, it's time to move on to Q-learning. Q-learning is an off-policy algorithm, which means we can leverage Experience Replay, and it's similar to SARSA. 
 
 However, first, let's look at Q-learning **without** Experience Replay. The main difference between Q-learning and SARSA is that when calculating the target Q, we don't consider random actions (like in epsilon-greedy), even if the actual next action might be random—we just do exploitation. Intuitively, it makes sense to define the value of the current state based on the best possible result achievable by ideal actions from that state.
+
+> **Code:** [`2.Qlearning_cartpole.py`](https://github.com/Yeongseung/stabilizing-q-learning-cartpole/blob/main/2.Qlearning_cartpole.py)
 
 ```python
         # calculate the target
@@ -205,6 +211,8 @@ The results seem not that different from those of SARSA.
 ## 4. Q-learning with Experience Replay
 Okay, I set the capacity of the replay buffer to 10,000, the batch size to 32, and the update (training) frequency to every four steps. Let's see the results.
 
+> **Code:** [`3.Qlearning_cartpole_replay.py`](https://github.com/Yeongseung/stabilizing-q-learning-cartpole/blob/main/3.Qlearning_cartpole_replay.py)
+
 <figure class="figure-center">
   <img src="/posts/Mastering_CartPole/Qlearning_replay_fixed_states.png" width="700">
   <figcaption>Figure 7. Q-values on fixed states with experience replay</figcaption>
@@ -224,6 +232,8 @@ So, the problem is still forgetting, which, I believe, cannot be solved by targe
 ## 5. Dual Buffer
 The dual buffer idea is to separate successful experiences from unsuccessful experiences, and sample from them by a fixed ratio like 7:3. I think this could be a direct remedy for periodic drops. I set the capacities of the successful buffer and unsuccessful buffer to 5000 each, with the same batch size of 32. Let's see the results.
 
+> **Code:** [`4.Qlearning_cartpole_replay_dual.py`](https://github.com/Yeongseung/stabilizing-q-learning-cartpole/blob/main/4.Qlearning_cartpole_replay_dual.py)
+
 <figure class="figure-center">
   <img src="/posts/Mastering_CartPole/dual_buffer_fixed_states.png" width="700">
   <figcaption>Figure 9. Q-values on fixed states using dual buffer (successful + unsuccessful)</figcaption>
@@ -237,7 +247,9 @@ The dual buffer idea is to separate successful experiences from unsuccessful exp
 Logically, I believe adding a dual buffer was the right approach, but it hasn't solved the periodic drop problem so far. In the meantime, the Q-values became too high and the TD error skyrocketed. I think we should solve this problem first.
 
 ## 6. Double DQN
-The idea of separating the main Q-network and the target Q-network is a well-known solution for Q-value overestimation. The reason I didn't use this idea earlier was that I thought the dual buffer could solve the periodic drop problem even without separating the Q-networks. Anyway, let's see the results.
+The idea of separating the main Q-network and the target Q-network is a well-known solution for Q-value overestimation [[3, 4]](#ref-3). The reason I didn't use this idea earlier was that I thought the dual buffer could solve the periodic drop problem even without separating the Q-networks. Anyway, let's see the results.
+
+> **Code:** [`5.Qlearning_cartpole_replay_dual_double.py`](https://github.com/Yeongseung/stabilizing-q-learning-cartpole/blob/main/5.Qlearning_cartpole_replay_dual_double.py)
 
 <figure class="figure-center">
   <img src="/posts/Mastering_CartPole/double_soft_Q_fixed_states.png" width="700">
@@ -258,6 +270,8 @@ For example, even when the buffer is filled with 500-reward experiences, if the 
 <details>
 <summary><b>Click to see Double DQN without Dual buffer case</b></summary>
 
+> **Code:** [`5_1.Qlearning_cartpole_replay_double.py`](https://github.com/Yeongseung/stabilizing-q-learning-cartpole/blob/main/5_1.Qlearning_cartpole_replay_double.py)
+
 <figure class="figure-center">
   <img src="/posts/Mastering_CartPole/nodual_double_Q_fixed_states.png" width="700">
   <figcaption>Figure 13. Q-values using Double DQN without dual buffer</figcaption>
@@ -272,6 +286,8 @@ For example, even when the buffer is filled with 500-reward experiences, if the 
 
 ## 7. Refining Buffer Strategy
 
+> **Code:** [`7.Qlearning_cartpole_replay_normal_failure.py`](https://github.com/Yeongseung/stabilizing-q-learning-cartpole/blob/main/7.Qlearning_cartpole_replay_normal_failure.py)
+
 ### Back to the buffer
 Okay, let's go back to buffer modification. I noticed that the Q-values tended to drift upward as the steps progressed, which was especially obvious before implementing Double DQN. **My theory here is that** because I defined the "unsuccessful buffer" as simply the storage storing every state of episodes where the total reward was less than 500, the buffer eventually became saturated with "long" unsuccessful experiences.
 
@@ -280,7 +296,9 @@ Okay, let's go back to buffer modification. I noticed that the Q-values tended t
 **If we look closely at the CartPole reward system**, the environment outputs a reward of 1 for every step the cart remains upright and a reward of 0 only when it falls or moves out of bounds. This means 1 is the dominant reward, while 0 is extremely rare. So, the moment the environment outputs 0 is the only time a truly meaningful signal is transmitted to the network. It marks the exact transition that should be avoided. Therefore, when "long" unsuccessful experiences dominate the buffer, these crucial reward-0 transitions become even scarcer. 
 
 ### Failure Buffer
-**To fix this**, I renamed the unsuccessful buffer to the Failure Buffer. Instead of saving entire "bad" episodes, I modified it to store only the specific terminal states where the reward is 0. By specifically sampling these "failure points," we ensure the model constantly remembers exactly what "losing" looks like, preventing the distribution from narrowing too much even when the agent becomes highly skilled. Let's check the results.
+**To fix this**, I renamed the unsuccessful buffer to the Failure Buffer. Instead of saving entire "bad" episodes, I modified it to store only the specific terminal states where the reward is 0. By specifically sampling these "failure points," we ensure the model constantly remembers exactly what "losing" looks like, preventing the distribution from narrowing too much even when the agent becomes highly skilled. 
+
+This approach is conceptually related to prioritized experience replay [[5]](#ref-5), which prioritizes transitions with high TD error. Here, we prioritize failure states (reward = 0) since they carry the most critical learning signal in CartPole's sparse reward structure. Let's check the results.
 
 <figure class="figure-center">
   <img src="/posts/Mastering_CartPole/batch32_fixed_states.png" width="700">
@@ -376,3 +394,35 @@ However, I am concerned that further manual adjustment of the buffer might lead 
 4. Maintaining an additional failure buffer that stores only terminal transitions (state–action pairs yielding reward 0) proved effective for long-term stability, since CartPole's reward signal is extremely sparse and failures provide the most informative learning signal.
 5. In one run, the episode–reward curve became nearly perfectly stable. However, this was likely due to overfitting to only one or two dominant failure modes, while the buffer at that time contained mostly "successful" trajectories.
 6. To become truly robust, the agent must learn to handle all four major failure modes (edge right, edge left, leaning right, leaning left). One promising direction would be to balance the failure buffer so that each failure type is represented evenly (e.g., 25% each), although this was not explored here. Additionally, 3,000 episodes may still be insufficient to fully achieve such robustness.
+
+# References
+
+<a id="ref-1"></a>
+**[1] Sutton, R. S., & Barto, A. G. (2018).** *Reinforcement Learning: An Introduction* (2nd ed.). MIT Press.  
+[http://incompleteideas.net/book/the-book-2nd.html](http://incompleteideas.net/book/the-book-2nd.html)  
+*The foundational textbook covering TD learning, SARSA, and Q-learning algorithms.*
+
+<a id="ref-2"></a>
+**[2] Mnih, V., et al. (2013).** Playing Atari with Deep Reinforcement Learning. *arXiv preprint arXiv:1312.5602*.  
+[https://arxiv.org/abs/1312.5602](https://arxiv.org/abs/1312.5602)  
+*Introduced Deep Q-Networks (DQN) with experience replay, demonstrating how neural networks can be stabilized for Q-learning.*
+
+<a id="ref-3"></a>
+**[3] Mnih, V., et al. (2015).** Human-level control through deep reinforcement learning. *Nature, 518*(7540), 529-533.  
+[https://www.nature.com/articles/nature14236](https://www.nature.com/articles/nature14236)  
+*Extended DQN work published in Nature, providing comprehensive analysis of experience replay and target networks.*
+
+<a id="ref-4"></a>
+**[4] Van Hasselt, H., Guez, A., & Silver, D. (2016).** Deep Reinforcement Learning with Double Q-learning. *Proceedings of the AAAI Conference on Artificial Intelligence, 30*(1).  
+[https://arxiv.org/abs/1509.06461](https://arxiv.org/abs/1509.06461)  
+*Introduced Double DQN to address Q-value overestimation by decoupling action selection and evaluation.*
+
+<a id="ref-5"></a>
+**[5] Schaul, T., et al. (2016).** Prioritized Experience Replay. *International Conference on Learning Representations (ICLR)*.  
+[https://arxiv.org/abs/1511.05952](https://arxiv.org/abs/1511.05952)  
+*Proposed prioritizing transitions based on TD error, related to the failure-focused sampling approach used in this post.*
+
+<a id="ref-6"></a>
+**[6] Gymnasium Documentation (formerly OpenAI Gym).** CartPole-v1 Environment.  
+[https://gymnasium.farama.org/environments/classic_control/cart_pole/](https://gymnasium.farama.org/environments/classic_control/cart_pole/)  
+*Official documentation for the CartPole environment used in these experiments.*
