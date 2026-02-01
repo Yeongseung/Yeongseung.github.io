@@ -163,7 +163,7 @@ If the problem is mainly caused by forgetting previous experiences, there could 
 
 <figure class="figure-center">
   <img src="/posts/Mastering_CartPole/distributions.png" width="700">
-  <figcaption>Figure 4. Example training distributions: (1) overfitted to one side, (2) narrow distribution around equilibrium</figcaption>
+  <figcaption>Figure 4. Example training distributions: (1) overfitted to one side, (2) narrow distribution around equilibrium, (3) overfitting to one side</figcaption>
 </figure>
 
 In CartPole there are four scalars in the state, but let's think about only one scalar, **Pole Angle**. If training data is dominated by specific scenarios, such as left-leaning angles (Curve 1), the agent overfits and fails to handle opposite situations like right tilts. As the agent masters the task, the data distribution squeezes into a narrow curve around zero (Curve 2), causing the agent to forget recovery strategies for large deviations. (This is similar to a problem in imitation learning, which learns from expert behaviors.)
@@ -388,7 +388,7 @@ This drop coincided with the agent encountering Edge Left and Leaning Right scen
 However, I am concerned that further manual adjustment of the buffer might lead to excessive 'hand-crafting.' Well, I believe this is a good time to wrap up, and here are the takeaways.
 
 # Summary
-1. Achieving the maximum reward of 500 is relatively easy, and even SARSA or a naïve DQN can reach this level.
+1. Achieving the maximum reward of 500 is relatively easy, and even SARSA or a naive DQN can reach this level.
 2. Experience Replay is highly effective for stabilizing training; however, without Double DQN (i.e., separating the online and target networks), it causes Q-values to grow uncontrollably.
 3. Double DQN appears to be essential when using Experience Replay, since standard Q-learning tends to overestimate Q-values beyond their theoretically correct range.
 4. Maintaining an additional failure buffer that stores only terminal transitions (state–action pairs yielding reward 0) proved effective for long-term stability, since CartPole's reward signal is extremely sparse and failures provide the most informative learning signal.
