@@ -1492,7 +1492,7 @@ Okay, Let's see the result. I trained the model for 20 epochs. Below are three v
 | **Target** | 그뿐 아니라 상대팀이 내는 핑클의 '내 남자 친구에게'부터 장기하와 얼굴들 '싸구려 커피'까지 빠르게 눈치채며 팀을 우승으로 이끌었다. |
 | **Predicted** | ▁나아가 ▁상대 ▁팀이 ▁ ' 나의 ▁친구 ' 부터 ▁ ' 내 녀 에게 ▁꼭 ▁먹어 요 ' , ▁장기 하와 ▁함께 ▁하는 ▁ ' 힘 들 티 ' 까지 ▁빠르게 ▁풀 며 ▁경기를 ▁이겼다 . |
 
-The **▁** (U+2581) in the predictions is the special character used by the BPE tokenizer to mark a space or word boundary. When the tokenizer decodes the model output back to text, it leaves this symbol in place instead of converting it to an actual space, so the raw decoded string looks like that. In a production pipeline you would typically post-process the decoded text to replace **▁** with a normal space.
+The **▁** in the predictions is the special character used by the BPE tokenizer to mark a space or word boundary. When the tokenizer decodes the model output back to text, it leaves this symbol in place instead of converting it to an actual space, so the raw decoded string looks like that. In a production pipeline you would typically post-process the decoded text to replace **▁** with a normal space.
 
 Even though the translations are far from perfect, the results are still quite impressive. The model was trained on only about 130K sentence pairs for 20 epochs, which took roughly 8 hours on a single GPU.
 
