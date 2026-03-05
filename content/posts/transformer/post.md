@@ -857,7 +857,7 @@ $$ \sigma^2_w = \frac{1}{m} = \frac{1}{fan_{out}} $$
 >Xavier initialization fundamentally aims to control the variance of the weights; the choice between a normal and a uniform distribution is secondary. A normal distribution concentrates values around zero but still allows rare large values due to its tails, whereas a uniform distribution samples weights evenly within a fixed range and strictly prevents extreme values. In other words, the uniform version eliminates the possibility of unusually large initial weights. In practice, both approaches work well, but uniform initialization is often slightly preferred for its bounded range and empirical stability, which is why xavier_uniform_ is commonly used in PyTorch.
 
 # Using the transformer
-Okay, now we will train the transformer and use it to translate English to Korean.
+Okay, now we will train the transformer and use it to translate English to Korean. For this, I will make `dataset.py` , `config.py`, and `train.py` files.
 
 ## Dataset
 
@@ -873,8 +873,8 @@ class BilingualDataset(Dataset):
         self.max_seq_len = max_seq_len # maximum sequence length
         self.tokenizer_src = tokenizer_src # tokenizer for the source language
         self.tokenizer_tgt = tokenizer_tgt # tokenizer for the target language
-        self.src_lang = src_lang # source language, e.g. "en"
-        self.tgt_lang = tgt_lang # target language, e.g. "it"
+        self.src_lang = src_lang # source language, e.g. "english"
+        self.tgt_lang = tgt_lang # target language, e.g. "korean"
 
 
         # special tokens
@@ -891,11 +891,11 @@ class BilingualDataset(Dataset):
     def __getitem__(self, idx):
         src_target_pair = self.ds[idx] # get the source and target text from the dataset
 
-        src_text = src_target_pair["translation"][self.src_lang] # get the source text from the dataset
+        src_text = src_target_pair[self.src_lang] # get the source text from the dataset
         # e.g. "I love you"
 
-        tgt_text = src_target_pair["translation"][self.tgt_lang] # get the target text from the dataset
-        # e.g. "Io ti amo"
+        tgt_text = src_target_pair[self.tgt_lang] # get the target text from the dataset
+        # e.g. "나는 너를 사랑해"
 
         # encode the source and target text
         enc_input_tokens = self.tokenizer_src.encode(src_text).ids # encode the source text
@@ -968,10 +968,9 @@ class BilingualDataset(Dataset):
             "encoder_mask": (encoder_input != self.pad_token).unsqueeze(0).unsqueeze(0).int(), # (1, 1, max_seq_len)
             "decoder_mask": (decoder_input != self.pad_token).unsqueeze(0).unsqueeze(0).int() & causal_mask(decoder_input.size(0)),
             "labels": labels, # (max_seq_len, )
-            "src_text": src_text,
-            "tgt_text": tgt_text,
-        
-        }
+            "src_text": src_text, # source text
+            "tgt_text": tgt_text, # target text
+        } # return a dictionary containing the encoder input, decoder input, encoder mask, decoder mask, labels, source text, and target text
 
 def causal_mask(size):
     mask = torch.triu(torch.ones(size, size), diagonal=1).type(torch.int)
@@ -1061,5 +1060,408 @@ $$
 1 & 1 & 1 & 1 & 1 & 0 & 0 & 0 & 0 & 0
 \end{bmatrix}
 $$
+
+## Config
+
+```python
+def get_config():
+    return {
+        "batch_size": 16,
+        "num_epochs": 20,
+        "lr": 10**-4,
+        "seq_len": 100,
+        "d_model": 512,
+        "lang_src": "english",
+        "lang_tgt": "korean",
+        "model_folder": "weights",
+        "model_basename": "tmodel_", #transformer model
+        "preload": None, # path to a pre-trained model
+        "tokenizer_file": "tokenizer_{0}.json",
+        "experiment_name": "runs/tmodel"
+    }
+
+def get_weights_file_path(config, epoch: str):
+    model_folder = config["model_folder"]
+    model_basename = config["model_basename"]
+    model_filename = f"{model_basename}{epoch}.pt"
+    return str(Path('.') / model_folder / model_filename)
+```
+The main reason to make config file is to make easier to change the parameters.
+I tried batch size 8, 16, 32, and 64. When I set it 32, I got out of memory, so set it to 16. The maximum sequence length is 96, so I set it to 100.
+
+
+## Train
+
+```python
+import torch
+import torch.nn as nn
+from torch.utils.data import Dataset, DataLoader, random_split
+from dataset import BilingualDataset, causal_mask
+from model import build_transformer
+from config import get_weights_file_path, get_config
+from datasets import load_dataset
+from tokenizers import Tokenizer
+from tokenizers.models import BPE # Byte Pair Encoding
+from tokenizers.trainers import BpeTrainer
+from tokenizers import pre_tokenizers
+from torch.utils.tensorboard import SummaryWriter
+import warnings
+from tqdm import tqdm
+from pathlib import Path
+
+def greedy_decode(model, source, source_mask, tokenizer_src, tokenizer_tgt, max_seq_len, device):
+    sos_idx = tokenizer_tgt.token_to_id("[SOS]")
+    eos_idx = tokenizer_tgt.token_to_id("[EOS]")
+
+    # Precompute the encoder output and reuse it for every token we get from the decoder
+    encoder_output = model.encode(source, source_mask)
+
+    # Initialize the decoder input with the sos token
+    decoder_input = torch.empty(1, 1).fill_(sos_idx).type_as(source).to(device)
+    while True:
+        if decoder_input.size(1) >= max_seq_len:
+            break
+
+        # Build mask for the target (decoder input)
+        decoder_mask = causal_mask(decoder_input.size(1)).type_as(source_mask).to(device)
+        # we don't have any padding tokens in the decoder input, so we don't need.
+
+        # Calculate the output of the decoder
+        out = model.decode(decoder_input.long(), encoder_output, source_mask, decoder_mask)
+
+        # Get the next token
+        prob = model.project(out[:, -1])
+        _, next_word = torch.max(prob, dim=-1) # this is the greedy search.
+        decoder_input = torch.cat([decoder_input, torch.empty(1, 1).type_as(source).fill_(next_word.item()).to(device)], dim=1)
+        
+        if next_word == eos_idx:
+            break
+
+    return decoder_input.squeeze(0)
+
+def run_validation(model, validation_ds, tokenizer_src, tokenizer_tgt, max_seq_len, device, print_msg, global_state, writer, num_examples=2):
+    model.eval()
+    count = 0
+
+    # Size of the control window (just use a default value)
+    console_width = 80
+
+    with torch.no_grad():
+        for batch in validation_ds:
+            count += 1
+            encoder_input = batch["encoder_input"].to(device)
+            encoder_mask = batch["encoder_mask"].to(device)
+
+            assert encoder_input.size(0) == 1, "Batch size must be 1 for validation"
+
+            model_out = greedy_decode(model, encoder_input, encoder_mask, tokenizer_src, tokenizer_tgt, max_seq_len, device)
+
+            source_text = batch["src_text"][0]
+            target_text = batch["tgt_text"][0]
+            model_out_text = tokenizer_tgt.decode(model_out.detach().cpu().numpy())
+
+            # Print to the console
+            print_msg('.' * console_width)
+            print_msg(f"Source: {source_text}")
+            print_msg(f"target: {target_text}")
+            print_msg(f"predicted: {model_out_text}")
+
+            if count == num_examples:
+                break
+
+def get_all_sentences(ds, lang):
+    for item in ds:
+        yield item[lang]
+
+def get_or_build_tokenizer(config, ds, lang):
+
+    # e.g. config["tokenizer_file"] = '../tokenizers/tokenizer_{0}.json'
+    tokenizer_path = Path(config["tokenizer_file"].format(lang))
+    if not Path.exists(tokenizer_path):
+        # If there is no word in tokenizer, then use "[UNK]" as the unkown token
+        tokenizer = Tokenizer(BPE(unk_token="[UNK]"))
+        # Split by whitespace
+        tokenizer.pre_tokenizer = pre_tokenizers.Sequence(
+            [pre_tokenizers.Metaspace(), pre_tokenizers.Punctuation()])
+        # min_frequency: the minimum frequency of a word to be included in the tokenizer
+        trainer = BpeTrainer(special_tokens=["[UNK]", "[PAD]", "[SOS]", "[EOS]"], min_frequency=2)
+        tokenizer.train_from_iterator(get_all_sentences(ds, lang), trainer=trainer)
+        tokenizer.save(str(tokenizer_path))
+    else:
+        tokenizer = Tokenizer.from_file(str(tokenizer_path))
+    return tokenizer
+
+def get_ds(config):
+    ds_raw = load_dataset("bongsoo/news_talk_en_ko", split="train[:10%]")
+    ds_raw = ds_raw.rename_column("Skinner's reward is mostly eye-watering.", "english")
+    ds_raw = ds_raw.rename_column("스키너가 말한 보상은 대부분 눈으로 볼 수 있는 현물이다.", "korean")
+    # Build tokenizers
+    tokenizer_src = get_or_build_tokenizer(config, ds_raw, config["lang_src"])
+    tokenizer_tgt = get_or_build_tokenizer(config, ds_raw, config["lang_tgt"])
+
+    # Keep 90% for training, 10% for validation
+    train_ds_size = int(0.9 * len(ds_raw))
+    val_ds_size = len(ds_raw) - train_ds_size
+    train_ds_raw, val_ds_raw = random_split(ds_raw, [train_ds_size, val_ds_size])
+
+    train_ds = BilingualDataset(train_ds_raw, tokenizer_src, tokenizer_tgt, config["lang_src"], config["lang_tgt"], config["seq_len"])
+    val_ds = BilingualDataset(val_ds_raw, tokenizer_src, tokenizer_tgt, config["lang_src"], config["lang_tgt"], config["seq_len"])
+
+    max_len_src = 0
+    max_len_tgt = 0
+
+    for item in ds_raw:
+        src_ids = tokenizer_src.encode(item[config["lang_src"]]).ids
+        tgt_ids = tokenizer_tgt.encode(item[config["lang_tgt"]]).ids
+        max_len_src = max(max_len_src, len(src_ids))
+        max_len_tgt = max(max_len_tgt, len(tgt_ids))
+
+    print(f"Maximum length of source sentences: {max_len_src}")
+    print(f"Maximum length of target sentences: {max_len_tgt}")
+
+    train_dataloader = DataLoader(train_ds, batch_size=config["batch_size"], shuffle=True)
+    val_dataloader = DataLoader(val_ds, batch_size=1, shuffle=True)
+
+    return train_dataloader, val_dataloader, tokenizer_src, tokenizer_tgt
+
+
+def get_model(config, vocab_src_len, vocab_tgt_len):
+    model = build_transformer(vocab_src_len, vocab_tgt_len, config["seq_len"], config["seq_len"], d_model=config["d_model"])
+    return model
+
+def train_model(config):
+    # Define the device
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    print(f"Using device: {device}")
+
+    Path(config["model_folder"]).mkdir(parents=True, exist_ok=True)
+
+    train_dataloader, val_dataloader, tokenizer_src, tokenizer_tgt = get_ds(config)
+    model = get_model(config, tokenizer_src.get_vocab_size(), tokenizer_tgt.get_vocab_size()).to(device)
+
+    # Tensorboard
+    writer = SummaryWriter(config["experiment_name"])
+
+    optimizer = torch.optim.Adam(model.parameters(), lr=config["lr"], eps=1e-9)
+
+    initial_epoch = 0
+    global_step = 0
+    if config["preload"]:
+        model_filename = get_weights_file_path(config, config["preload"])
+        print(f"Preloading model {model_filename}")
+        state = torch.load(model_filename)
+        initial_epoch = state["epoch"] + 1
+        optimizer.load_state_dict(state["optimizer_state_dict"])
+        global_step = state["global_step"]
+
+    loss_fn = nn.CrossEntropyLoss(ignore_index=tokenizer_src.token_to_id("[PAD]"), label_smoothing=0.1).to(device)
+
+    for epoch in range(initial_epoch, config["num_epochs"]):
+        model.train()
+        batch_iterator = tqdm(train_dataloader, desc=f"Processing Epoch {epoch:02d}")
+        for batch in batch_iterator:
+            
+            encoder_input = batch["encoder_input"].to(device) # (batch_size, seq_len)
+            decoder_input = batch["decoder_input"].to(device) # (batch_size, seq_len)
+            encoder_mask = batch["encoder_mask"].to(device) # (B, 1, 1, seq_len)
+            decoder_mask = batch["decoder_mask"].to(device) # (B, 1, seq_len, seq_len)
+            
+            # Run the tensors through the transformer
+            encoder_output = model.encode(encoder_input, encoder_mask) # (batch_size, seq_len, d_model)
+            decoder_output = model.decode(decoder_input, encoder_output, encoder_mask, decoder_mask) # (batch_size, seq_len, d_model)
+            proj_output = model.project(decoder_output) # (batch_size, seq_len, vocab_tgt_size)
+
+            label = batch["labels"].to(device) # (batch_size, seq_len)
+
+            # (batch_size, seq_len, tgt_vocab_size) -> (batch_size * seq_len, tgt_vocab_size)
+            loss = loss_fn(proj_output.view(-1, tokenizer_tgt.get_vocab_size()), label.view(-1))
+            batch_iterator.set_postfix({f"loss": f"{loss.item():6.3f}"})
+
+            # Log the loss
+            writer.add_scalar("train_loss", loss.item(), global_step)
+            writer.flush()
+
+            # Backpropagete the loss
+            loss.backward()
+
+            # Update the weights
+            optimizer.step()
+            optimizer.zero_grad()
+            
+            global_step += 1
+
+        run_validation(model, val_dataloader, tokenizer_src, tokenizer_tgt, config["seq_len"], device, lambda msg: batch_iterator.write(msg), global_step, writer, num_examples=2)
+
+        # Save the model at the end of the epoch
+        model_filename = get_weights_file_path(config, f"{epoch:02d}")
+        torch.save({
+            "epoch": epoch,
+            "model_state_dict": model.state_dict(),
+            "optimizer_state_dict": optimizer.state_dict(),
+            "global_step": global_step,
+        }, model_filename)
+
+if __name__ == "__main__":
+    warnings.filterwarnings("ignore")
+    config = get_config()
+    train_model(config)
+```
+**Let's see function by function**, but I'll skip the `greedy_decode` and `run_validation`, which are used for validation and code is quite simple.
+```python
+def get_all_sentences(ds, lang):
+    for item in ds:
+        yield item[lang]
+```
+This function follows the typical way to make a dataset iterator. we made this function because tokenizer requires a iterator to build the vocabulary.
+
+```python
+def get_or_build_tokenizer(config, ds, lang):
+
+    # e.g. config["tokenizer_file"] = '../tokenizers/tokenizer_{0}.json'
+    tokenizer_path = Path(config["tokenizer_file"].format(lang))
+    if not Path.exists(tokenizer_path):
+        # If there is no word in tokenizer, then use "[UNK]" as the unkown token
+        tokenizer = Tokenizer(BPE(unk_token="[UNK]"))
+        # Split by whitespace
+        tokenizer.pre_tokenizer = pre_tokenizers.Sequence(
+            [pre_tokenizers.Metaspace(), pre_tokenizers.Punctuation()])
+
+        trainer = BpeTrainer(special_tokens=["[UNK]", "[PAD]", "[SOS]", "[EOS]"], min_frequency=2)
+        tokenizer.train_from_iterator(get_all_sentences(ds, lang), trainer=trainer)
+        tokenizer.save(str(tokenizer_path))
+    else:
+        tokenizer = Tokenizer.from_file(str(tokenizer_path))
+    return tokenizer
+```
+This function is about tokenizer. If there is no tokenizer file, it will build a new one. If there is, it will load the existing one. In this case, we use BPE tokenizer, and unknown token will be "[UNK]". By the way, BPE is an algorithm that repeatedly merges the most frequent pairs of characters to build a subword vocabulary.
+
+And here's pre-tokenization part. Pre-tokenization is applied before the main tokenization process to split the raw text into initial units. I use **Metaspace** to preserve whitespace information by replacing spaces with a special visible character, which helps the model treat spaces consistently. So, if whitespace is important in the languages you are dealing with, using Metaspace is a good choice.
+
+**Punctuation** is used to split punctuation marks(, !, ? etc.) into separate tokens so they can be learned independently. The parameter **min_frequency=2** means that a token pair must appear at least twice in the training data to be considered for merging into the vocabulary. Finally, the trained tokenizer is saved to a file so it can be reused later without retraining.
+
+```python
+def get_ds(config):
+    ds_raw = load_dataset("bongsoo/news_talk_en_ko", split="train[:30%]")
+    ds_raw = ds_raw.rename_column("Skinner's reward is mostly eye-watering.", "english")
+    ds_raw = ds_raw.rename_column("스키너가 말한 보상은 대부분 눈으로 볼 수 있는 현물이다.", "korean")
+    # Build tokenizers
+    tokenizer_src = get_or_build_tokenizer(config, ds_raw, config["lang_src"])
+    tokenizer_tgt = get_or_build_tokenizer(config, ds_raw, config["lang_tgt"])
+
+    # Keep 90% for training, 10% for validation
+    train_ds_size = int(0.9 * len(ds_raw))
+    val_ds_size = len(ds_raw) - train_ds_size
+    train_ds_raw, val_ds_raw = random_split(ds_raw, [train_ds_size, val_ds_size])
+
+    train_ds = BilingualDataset(train_ds_raw, tokenizer_src, tokenizer_tgt, config["lang_src"], config["lang_tgt"], config["seq_len"])
+    val_ds = BilingualDataset(val_ds_raw, tokenizer_src, tokenizer_tgt, config["lang_src"], config["lang_tgt"], config["seq_len"])
+
+    max_len_src = 0
+    max_len_tgt = 0
+
+    for item in ds_raw:
+        src_ids = tokenizer_src.encode(item[config["lang_src"]]).ids
+        tgt_ids = tokenizer_tgt.encode(item[config["lang_tgt"]]).ids
+        max_len_src = max(max_len_src, len(src_ids))
+        max_len_tgt = max(max_len_tgt, len(tgt_ids))
+
+    print(f"Maximum length of source sentences: {max_len_src}")
+    print(f"Maximum length of target sentences: {max_len_tgt}")
+
+    train_dataloader = DataLoader(train_ds, batch_size=config["batch_size"], shuffle=True)
+    val_dataloader = DataLoader(val_ds, batch_size=1, shuffle=True)
+
+    return train_dataloader, val_dataloader, tokenizer_src, tokenizer_tgt
+```
+I used [this dataset](https://huggingface.co/datasets/bongsoo/news_talk_en_ko) for training. I set 30% here, so approximately, I used 400K rows for training. The column names were one of the sample sentences from the dataset, so I renamed them to "english" and "korean". 
+
+And I took 10% of the dataset for validation. The for loop is to find the maximum length of the source and target sentences. This part could take some time, and based on the result of this (It was 171), I set the maximum sequence length to 180.
+
+```python
+def get_model(config, vocab_src_len, vocab_tgt_len):
+    model = build_transformer(vocab_src_len, vocab_tgt_len, config["seq_len"], config["seq_len"], d_model=config["d_model"])
+    return model
+```
+This function is for convenience later. Later, to get a model, we only need to put `config`, `vocab_src_len`, and `vocab_tgt_len`.
+
+```python
+def train_model(config):
+    # Define the device
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    print(f"Using device: {device}")
+
+    Path(config["model_folder"]).mkdir(parents=True, exist_ok=True)
+
+    train_dataloader, val_dataloader, tokenizer_src, tokenizer_tgt = get_ds(config)
+    model = get_model(config, tokenizer_src.get_vocab_size(), tokenizer_tgt.get_vocab_size()).to(device)
+
+    # Tensorboard
+    writer = SummaryWriter(config["experiment_name"])
+
+    optimizer = torch.optim.Adam(model.parameters(), lr=config["lr"], eps=1e-9)
+
+    initial_epoch = 0
+    global_step = 0
+    if config["preload"]:
+        model_filename = get_weights_file_path(config, config["preload"])
+        print(f"Preloading model {model_filename}")
+        state = torch.load(model_filename)
+        initial_epoch = state["epoch"] + 1
+        optimizer.load_state_dict(state["optimizer_state_dict"])
+        global_step = state["global_step"]
+
+    loss_fn = nn.CrossEntropyLoss(ignore_index=tokenizer_src.token_to_id("[PAD]"), label_smoothing=0.1).to(device)
+
+    for epoch in range(initial_epoch, config["num_epochs"]):
+        model.train()
+        batch_iterator = tqdm(train_dataloader, desc=f"Processing Epoch {epoch:02d}")
+        for batch in batch_iterator:
+            encoder_input = batch["encoder_input"].to(device) # (batch_size, seq_len)
+            decoder_input = batch["decoder_input"].to(device) # (batch_size, seq_len)
+            encoder_mask = batch["encoder_mask"].to(device) # (B, 1, 1, seq_len)
+            decoder_mask = batch["decoder_mask"].to(device) # (B, 1, seq_len, seq_len)
+            
+            # Run the tensors through the transformer
+            encoder_output = model.encode(encoder_input, encoder_mask) # (batch_size, seq_len, d_model)
+            decoder_output = model.decode(decoder_input, encoder_output, encoder_mask, decoder_mask) # (batch_size, seq_len, d_model)
+            proj_output = model.project(decoder_output) # (batch_size, seq_len, vocab_tgt_size)
+
+            label = batch["labels"].to(device) # (batch_size, seq_len)
+
+            # (batch_size, seq_len, tgt_vocab_size) -> (batch_size * seq_len, tgt_vocab_size)
+            loss = loss_fn(proj_output.view(-1, tokenizer_tgt.get_vocab_size()), label.view(-1))
+            batch_iterator.set_postfix({f"loss": f"{loss.item():6.3f}"})
+
+            # Log the loss
+            writer.add_scalar("train_loss", loss.item(), global_step)
+            writer.flush()
+
+            # Backpropagete the loss
+            loss.backward()
+
+            # Update the weights
+            optimizer.step()
+            optimizer.zero_grad()
+            
+            global_step += 1
+
+        run_validation(model, val_dataloader, tokenizer_src, tokenizer_tgt, config["seq_len"], device, lambda msg: batch_iterator.write(msg), global_step, writer, num_examples=2)
+
+        # Save the model at the end of the epoch
+        model_filename = get_weights_file_path(config, f"{epoch:02d}")
+        torch.save({
+            "epoch": epoch,
+            "model_state_dict": model.state_dict(),
+            "optimizer_state_dict": optimizer.state_dict(),
+            "global_step": global_step,
+        }, model_filename)
+```
+I'd like to talk about the label smoothing used in here. Label smoothing is a technique to prevent the model from overfitting by reducing the confidence of the model. It works by replacing the one-hot encoded labels with a smoothed version of the labels.
+
+If vocab size is 5 and the label index is 2, then CrossEntropyLoss set the answer to **[0,0,1,0,0]**. This is called one-hot label. But, if we use label smoothing 0.1, then the answer index 2 will be 0.9 and the other indexes will be 0.1/(vocab_size-1) = 0.1/4 = 0.025. **[0.025, 0.025, 0.9, 0.025, 0.025]**. 
+
+**Why do this?** If we use one-hot label, the model will think **"The answer index has to be probability 1!"** If so, it could lead to overfitting, generalization performance could be degraded. On the other hand, label smoothing says **"It is an answer, but don't be too sure about it!"**. This is helpful for generalization.
+
+
 
 [^1]: Vaswani, A., Shazeer, N., Parmar, N., Uszkoreit, J., Jones, L., Gomez, A. N., Kaiser, Ł., & Polosukhin, I. (2017). Attention is all you need. In *Advances in Neural Information Processing Systems* (Vol. 30). https://arxiv.org/abs/1706.03762
