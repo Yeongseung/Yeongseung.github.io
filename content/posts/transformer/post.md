@@ -24,6 +24,8 @@ People also considered CNNs for language modeling, but CNNs can only see locally
 
 The Transformer architecture was introduced to overcome these constraints by eliminating recurrence and convolution, relying solely on attention mechanisms. This idea is reflected in the paper’s title, Attention Is All You Need.
 
+*The implementation in this post draws on the code at [hkproj/pytorch-transformer](https://github.com/hkproj/pytorch-transformer)[^2].*
+
 # Big Picture
 
 <figure class="figure-center">
@@ -117,7 +119,7 @@ Based on the figures, it makes sense that every position can get a unique positi
 
 Also, the values remain between -1 and 1, which is a great advantage when scaling.
 
-**About adding this positional encoding and input embedding**, I thought positional encoding could harm the meaning of the words (Input Embeddings) by adding some noise. For example, I imagined "chimpanzee" at position 5 could be the same as "cat" at position 12. However, [this post](https://kazemnejad.com/blog/transformer_architecture_positional_encoding/) suggests an interesting possibility. As we saw in Figure 5, there is not that much difference after about dimension 200. So, the model might relatively avoid dimensions 0 to 200 and use dimesion atfer 200 when it forms input embeddings during training.
+**About adding this positional encoding and input embedding**, I thought positional encoding could harm the meaning of the words (Input Embeddings) by adding some noise. For example, I imagined "chimpanzee" at position 5 could be the same as "cat" at position 12. However, [this post](https://kazemnejad.com/blog/transformer_architecture_positional_encoding/)[^7] suggests an interesting possibility. As we saw in Figure 5, there is not that much difference after about dimension 200. So, the model might relatively avoid dimensions 0 to 200 and use dimesion atfer 200 when it forms input embeddings during training.
 
 ```python
 class PositionalEncoding(nn.Module):
@@ -391,7 +393,7 @@ Finally, we multiply by $W_O$ to get the final output, which is the output of (4
   <figcaption>Figure 12. Encoder (Source: Vaswani et al., 2017)</figcaption>
 </figure>
 
-Now, it's time to make the `Add & Norm` part, which is a residual connection and layer normalization. First, Let's see the layer normalization.
+Now, it's time to make the `Add & Norm` part, which is a residual connection and layer normalization. First, Let's see the layer normalization[^6].
 $$LN(x)=\alpha\frac{x-\mu}{\sqrt{\sigma^2+\epsilon}}+\beta$$
 ```python
 class LayerNormalization(nn.Module):
@@ -768,7 +770,7 @@ def build_transformer(src_vocab_size: int, tgt_vocab_size: int, src_seq_len: int
 ```
 To use the transformer, first we need to initialize the parts of the transformer. That's why we have `build_transformer` function.
 
->**Here, why we use xavier initialization?** Xavier initialization is a popular method for initializing the weights of a neural network. It is named after Xavier Glorot and Yoshua Bengio, who introduced it in their 2010 paper "Understanding the difficulty of training deep feedforward neural networks."
+>**Here, why we use xavier initialization?** Xavier initialization is a popular method for initializing the weights of a neural network. It is named after Xavier Glorot and Yoshua Bengio, who introduced it in their 2010 paper "Understanding the difficulty of training deep feedforward neural networks."[^3]
 >
 >First, **Let's see forward propagation**. Let's say one layer is y.
 >$$ y = Wx $$
@@ -1333,7 +1335,7 @@ def get_or_build_tokenizer(config, ds, lang):
         tokenizer = Tokenizer.from_file(str(tokenizer_path))
     return tokenizer
 ```
-This function is about tokenizer. If there is no tokenizer file, it will build a new one. If there is, it will load the existing one. In this case, we use BPE tokenizer, and unknown token will be "[UNK]". By the way, BPE is an algorithm that repeatedly merges the most frequent pairs of characters to build a subword vocabulary.
+This function is about tokenizer. If there is no tokenizer file, it will build a new one. If there is, it will load the existing one. In this case, we use BPE tokenizer, and unknown token will be "[UNK]". By the way, BPE is an algorithm that repeatedly merges the most frequent pairs of characters to build a subword vocabulary[^5].
 
 And here's pre-tokenization part. Pre-tokenization is applied before the main tokenization process to split the raw text into initial units. I use **Metaspace** to preserve whitespace information by replacing spaces with a special visible character, which helps the model treat spaces consistently. So, if whitespace is important in the languages you are dealing with, using Metaspace is a good choice.
 
@@ -1456,12 +1458,54 @@ def train_model(config):
             "global_step": global_step,
         }, model_filename)
 ```
-I'd like to talk about the label smoothing used in here. Label smoothing is a technique to prevent the model from overfitting by reducing the confidence of the model. It works by replacing the one-hot encoded labels with a smoothed version of the labels.
+I'd like to talk about the label smoothing used in here. Label smoothing is a technique to prevent the model from overfitting by reducing the confidence of the model[^4]. It works by replacing the one-hot encoded labels with a smoothed version of the labels.
 
 If vocab size is 5 and the label index is 2, then CrossEntropyLoss set the answer to **[0,0,1,0,0]**. This is called one-hot label. But, if we use label smoothing 0.1, then the answer index 2 will be 0.9 and the other indexes will be 0.1/(vocab_size-1) = 0.1/4 = 0.025. **[0.025, 0.025, 0.9, 0.025, 0.025]**. 
 
 **Why do this?** If we use one-hot label, the model will think **"The answer index has to be probability 1!"** If so, it could lead to overfitting, generalization performance could be degraded. On the other hand, label smoothing says **"It is an answer, but don't be too sure about it!"**. This is helpful for generalization.
 
+## Result
 
+Okay, Let's see the result. I trained the model for 20 epochs. Below are three validation examples (source, target, and model prediction).
 
-[^1]: Vaswani, A., Shazeer, N., Parmar, N., Uszkoreit, J., Jones, L., Gomez, A. N., Kaiser, Ł., & Polosukhin, I. (2017). Attention is all you need. In *Advances in Neural Information Processing Systems* (Vol. 30). https://arxiv.org/abs/1706.03762
+**Example 1**
+
+| | |
+|--|--|
+| **Source** | Block deals are usually bad news for stock prices because large-scale supplies are released to the market. |
+| **Target** | 통상 블록딜은 시장에 대규모의 물량이 풀리는 것이어서 주가에는 악재다. |
+| **Predicted** | ▁블록 딜 은 ▁일반적으로 ▁대규모 ▁공급이 ▁시중에 ▁풀 어서 ▁주가에 ▁대한 ▁악재가 ▁더해 지고 ▁있다 . |
+
+**Example 2**
+
+| | |
+|--|--|
+| **Source** | U.S. computer company Dell collaborated with actor Nikki Reed, to release the fashion brand By You with Love that recycles scrap metal from the fashion. |
+| **Target** | 미국의 컴퓨터회사 델이 영화배우 니키 리드와 협업해 올 초 출시한 패션 브랜드 바이유위드러브는 폐금속을 재활용한다. |
+| **Predicted** | ▁미국 ▁컴퓨터 ▁기업 ▁델 이 ▁배우 ▁니키 ▁러 프와 ▁협업 하며 ▁패션 ▁브랜드 ▁쪽 과 ▁금속 을 ▁제거 한 ▁사랑 으로 ▁보는 ▁패션 ▁브랜드를 ▁출시한다 . |
+
+**Example 3**
+
+| | |
+|--|--|
+| **Source** | In addition, the opponent team won the game by quickly noticing from 'To My Boyfriend' by Fin.K.L to 'Cheap Coffee' by Jang Gi-ha and the Faces. |
+| **Target** | 그뿐 아니라 상대팀이 내는 핑클의 '내 남자 친구에게'부터 장기하와 얼굴들 '싸구려 커피'까지 빠르게 눈치채며 팀을 우승으로 이끌었다. |
+| **Predicted** | ▁나아가 ▁상대 ▁팀이 ▁ ' 나의 ▁친구 ' 부터 ▁ ' 내 녀 에게 ▁꼭 ▁먹어 요 ' , ▁장기 하와 ▁함께 ▁하는 ▁ ' 힘 들 티 ' 까지 ▁빠르게 ▁풀 며 ▁경기를 ▁이겼다 . |
+
+The **▁** (U+2581) in the predictions is the special character used by the BPE tokenizer to mark a space or word boundary. When the tokenizer decodes the model output back to text, it leaves this symbol in place instead of converting it to an actual space, so the raw decoded string looks like that. In a production pipeline you would typically post-process the decoded text to replace **▁** with a normal space.
+
+Even though the translations are far from perfect, the results are still quite impressive. The model was trained on only about 130K sentence pairs for 20 epochs, which took roughly 8 hours on a single GPU.
+
+[^1]: Vaswani, A., et al. (2017). Attention is all you need. In *Advances in Neural Information Processing Systems* (Vol. 30). https://arxiv.org/abs/1706.03762
+
+[^2]: hkproj/pytorch-transformer. (n.d.). *Attention is all you need* implementation. GitHub. https://github.com/hkproj/pytorch-transformer
+
+[^3]: Glorot, X., & Bengio, Y. (2010). Understanding the difficulty of training deep feedforward neural networks. In *Proceedings of the Thirteenth International Conference on Artificial Intelligence and Statistics* (pp. 249–256).
+
+[^4]: Szegedy, C., et al. (2016). Rethinking the Inception architecture for computer vision. In *Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition* (pp. 2818–2826).
+
+[^5]: Sennrich, R., Haddow, B., & Birch, A. (2016). Neural machine translation of rare words with subword units. In *Proceedings of the 54th Annual Meeting of the ACL* (pp. 1715–1725).
+
+[^6]: Ba, J. L., Kiros, J. R., & Hinton, G. E. (2016). Layer normalization. *arXiv preprint* arXiv:1607.06450.
+
+[^7]: Kazemnejad, A. (n.d.). Transformer architecture: The positional encoding. https://kazemnejad.com/blog/transformer_architecture_positional_encoding/
