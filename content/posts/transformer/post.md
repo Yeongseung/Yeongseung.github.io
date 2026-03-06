@@ -595,7 +595,7 @@ Let's see the **first line** of the forward method :
 x = self.residual_connections[0](x, lambda x: self.self_attention_block(x, x, x, target_mask))
 ```
 <figure class="figure-center">
-  <img src="/posts/transformer/decoder1.png" width="200">
+  <img src="/posts/transformer/Decoder1.png" width="200">
   <figcaption>Figure 18. Part of the decoder block (Source: Vaswani et al., 2017)</figcaption>
 </figure>
 
@@ -637,7 +637,7 @@ x = self.residual_connections[1](x, lambda x: self.cross_attention_block(x, enco
 ```
 
 <figure class="figure-center">
-  <img src="/posts/transformer/decoder2.png" width="200">
+  <img src="/posts/transformer/Decoder2.png" width="200">
   <figcaption>Figure 19. Part of the decoder block (Source: Vaswani et al., 2017)</figcaption>
 </figure>
 
@@ -652,7 +652,7 @@ x = self.residual_connections[2](x, self.feed_forward_block)
 ```
 
 <figure class="figure-center">
-  <img src="/posts/transformer/decoder3.png" width="200">
+  <img src="/posts/transformer/Decoder3.png" width="200">
   <figcaption>Figure 20. Part of the decoder block (Source: Vaswani et al., 2017)</figcaption>
 </figure>
 

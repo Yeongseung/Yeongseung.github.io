@@ -12,7 +12,7 @@ params:
   title: "Yeongseung's Blog"
   description: "My personal blog and portfolio"
   keywords: [Blog, Portfolio, PaperMod]
-  author: Yeongseung
+  author: Yeongseung Song
   
   # Default Theme (auto / dark / light)
   defaultTheme: auto
