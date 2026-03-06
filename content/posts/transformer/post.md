@@ -1,7 +1,7 @@
 ---
 date: '2026-02-24T19:51:23+09:00'
 draft: false
-title: 'Building a Transformer'
+title: 'Understanding and Building the Transformer'
 
 tags: ["Transformer", "Attention", "Deep Learning", "NLP"]
 ---
@@ -1494,7 +1494,12 @@ Okay, Let's see the result. I trained the model for 20 epochs. Below are three v
 
 The **▁** in the predictions is the special character used by the BPE tokenizer to mark a space or word boundary. When the tokenizer decodes the model output back to text, it leaves this symbol in place instead of converting it to an actual space, so the raw decoded string looks like that. In a production pipeline you would typically post-process the decoded text to replace **▁** with a normal space.
 
-Even though the translations are far from perfect, the results are still quite impressive. The model was trained on only about 130K sentence pairs for 20 epochs, which took roughly 8 hours on a single GPU.
+Even though the translations are far from perfect, the results are still quite impressive. The model was trained on only about 130K sentence pairs for 20 epochs, which took roughly 9 hours on a single GPU.
+
+<figure class="figure-center">
+  <img src="/posts/transformer/tensorboard.png" width="700">
+  <figcaption>Figure 23. Tensorboard</figcaption>
+</figure>
 
 [^1]: Vaswani, A., et al. (2017). Attention is all you need. In *Advances in Neural Information Processing Systems* (Vol. 30). https://arxiv.org/abs/1706.03762
 
