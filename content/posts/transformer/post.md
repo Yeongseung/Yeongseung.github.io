@@ -565,7 +565,7 @@ class Encoder(nn.Module):
 # Decoder
 
 <figure class="figure-center">
-  <img src="/posts/transformer/decoder.png" width="200">
+  <img src="/posts/transformer/Decoder.png" width="200">
   <figcaption>Figure 17. Decoder (Source: Vaswani et al., 2017)</figcaption>
 </figure>
 
