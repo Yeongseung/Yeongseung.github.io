@@ -324,6 +324,114 @@ Hypothesis C : These particles were located at the third door but were facing ri
   <figcaption>Figure 8. Particles after the resampling</figcaption>
 </figure>
 
-After the final resampling, all 1,000 particles collapse into a single, tight cluster in front of the second purple door. The robot has successfully localized itself by mathematically proving that only one starting position is consistent with the sequence of observations.
+After the resampling, all 1,000 particles collapse into a single, tight cluster in front of the second purple door. The robot has successfully localized itself by mathematically proving that only one starting position is consistent with the sequence of observations.
 
 # Graph
+
+In the previous chapter, we used Filters (Kalman Filter and Particle Filter) to answer the question: "Where am I?"  But localization is just the beginning. To be truly autonomous, a robot must decide: **"How do I get to my destination efficiently?"** This is where Graph Theory comes in.
+
+The physical world is continuous and infinitely complex, but a robot's brain needs structure to make decisions. By abstracting the environment into a Graph $G=(V,E)$, a set of vertices (states) and edges (paths), we simplify the infinite world into a manageable mathematical map.
+
+While filters are the robot's eyes, Graph Theory is its intelligence. Even the most advanced autonomous systems today rely on this hierarchical approach: using Graphs for Global Planning and continuous math for local movement.
+
+## Dijkstra's Algorithm
+
+Dijkstra's Algorithm is a graph search algorithm that finds the shortest path between two nodes in a graph. It is a greedy algorithm that works by iteratively selecting the node with the smallest distance from the start node.
+
+### Single Source Shortest Path Problem
+Dijkstra’s algorithm is designed to solve a specific optimization problem: Given a graph with non-negative edge weights, find the shortest path from a starting node (Source) to every other node in the network.
+
+- **Objective:** Minimize the total cost(distance, time, energy, etc.) of travel.
+- **Constraint:** Edge weights must be non-negative.($w \geq 0$)
+
+### Relaxation
+
+Relaxation is the key operation in Dijkstra’s algorithm. It updates the distance to a node if a shorter path is found.
+
+<figure class="figure-center">
+  <img src="/posts/SLAM/relaxation.png" width="600">
+  <figcaption>Figure 9. Relaxation</figcaption>
+</figure>
+
+**In (1)**, the shortest distance to node $b$ discovered so far is 9. However, we have found a new path to $b$ via node $a$ with a lower total cost of 5. Consequently, we update the shortest distance for node $b$ to 5 and set node $a$ as its new parent in the shortest path.
+
+**In (2)**, the shortest distance to node $b$ is already 6. Although we found an alternative path to $b$ through node $a$, its total cost is 7. Since the existing path is more efficient, we maintain the shortest distance for node $b$ at 6.
+
+As shown in these examples, the "relaxation" step acts as a core optimization operation that constantly refines the robot's knowledge.
+
+```python
+def relax(a, b, G):
+    if b.dist() > a.dist() + G.weight(a,b): # G is a graph object
+        b.set_dist(a.dist() + G.weight(a,b)) # set the distance of node b to a.dist() + G.weight(a,b)
+        b.set_parent(a) # set the parent of node b to a
+```
+
+### Pseudo-code for Dijkstra's Algorithm
+
+```python
+def Dijkstra(G, s):
+    # Initialization: Set up initial distances and parents 
+    for a in G.nodes(): # For each node a in the graph's node set
+        a.set_dist(float('inf')) # Initialize distance to infinity
+        a.set_parent(None)       # Initialize parent as None
+    # s is also in the G.nodes()
+    s.set_dist(0) # Set distance of the source node to 0
+    S = set() # Set of nodes whose shortest-path weights are already determined
+    Q = PriorityQueue(G.nodes()) # Priority Queue of nodes
+    while not Q.is_empty():
+        a = Q.pop_min() 
+        S.add(a) # Add a to the set of nodes whose shortest-path weights are already determined
+        for b in a.adjacent_nodes():
+            if b.dist > a.dist + G.weight(a, b): 
+                relax(a, b, G) # Relax the edge (a, b)
+                Q.modify_key(b) # Reorganize the priority queue as b's distance has decreased
+    return G # Return the graph with updated shortest path information
+```
+
+<figure class="figure-center">
+  <img src="/posts/SLAM/graph1.png" width="600">
+  <figcaption>Figure 10. Dijkstra's Algorithm Example</figcaption>
+</figure>
+
+In Figure 10, $S$ is empty and $Q= \\{s(0), x_1(\infty), x_2(\infty), x_3(\infty), x_4(\infty)\\}$. Since Q is not empty, the `while` loop is executed.
+
+**First `while` loop.** Because of `Q.pop_min()`, $a=s(0)$ is extracted from $Q$ and added to $S$. $S=\\{s(0)\\}$. And the for loop is executed.
+
+<figure class="figure-center">
+  <img src="/posts/SLAM/graph2.png" width="600">
+  <figcaption>Figure 11. Dijkstra's Algorithm Example</figcaption>
+</figure>
+
+After the for loop ran one time, $Q= \\{x_3(5), x_1(10), x_2(\infty), x_4(\infty)\\}$. And the `while` loop is executed again.
+
+**Second `while` loop.** At this time, $a=x_3(5)$ is extracted from $Q$ and added to $S$. $S=\\{s(0), x_3(5)\\}$. And the for loop is executed. Because this is directed graph, adjacent nodes of $x_3(5)$ are $x_1(10)$, $x_2(\infty)$, and $x_4(\infty)$.
+
+<figure class="figure-center">
+  <img src="/posts/SLAM/graph3.png" width="600">
+  <figcaption>Figure 12. Dijkstra's Algorithm Example</figcaption>
+</figure>
+
+$Q= \\{x_4(7), x_1(8), x_2(14)\\}$. **Third `while` loop.** Next time, $x_4(7)$ is extracted from $Q$ and added to $S$. $S=\\{s(0), x_3(5), x_4(7)\\}$. $a$ is $x_4(7)$ and the adjacent nodes are $s$ and $x_2(14)$.
+
+<figure class="figure-center">
+  <img src="/posts/SLAM/graph4.png" width="600">
+  <figcaption>Figure 13. Dijkstra's Algorithm Example</figcaption>
+</figure>
+
+$x_2(14)$ is turned into $x_2(13)$. $Q= \\{x_1(8), x_2(13)\\}$. **Fourth `while` loop.** a is $x_1(8)$ and the adjacent nodes are $x_3(5)$ and $x_2(13)$. $S=\\{s(0), x_3(5), x_4(7), x_1(8)\\}$.
+
+<figure class="figure-center">
+  <img src="/posts/SLAM/graph5.png" width="600">
+  <figcaption>Figure 14. Dijkstra's Algorithm Example</figcaption>
+</figure>
+
+Now, $Q= \\{x_2(9)\\}$. **Fifth `while` loop.** a is $x_2(9)$ and the adjacent node is only $x_4(7)$. $S=\\{s(0), x_3(5), x_4(7), x_1(8), x_2(9)\\}$. This time, nothing happens because $x_4$'s distance(7) is already less than 9+4=13.
+
+### Understanding Time Complexity $O(n^2)$
+
+Dijkstra’s algorithm operates in $O(n^2)$ time (where $n$ is the number of vertices) due to its nested search structure.
+
+- **1. Outer Loop ($n$ iterations):** The algorithm must extract each of the $n$ nodes from the Priority Queue exactly once to determine its final shortest path. 
+- **2. Inner Loop (Up to $n-1$ iterations):** For each extracted node, the robot scans all its adjacent neighbors to perform Relaxation. In the worst-case scenario (a complete graph where every node is connected to every other node), each node will have $n-1$ neighbors to check.
+
+$$n \text{ (Nodes)} \times (n-1) \text{ (Max Neighbors per Node)} = n^2 - n \approx O(n^2)$$
