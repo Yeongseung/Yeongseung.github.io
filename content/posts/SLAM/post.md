@@ -435,3 +435,97 @@ Dijkstra’s algorithm operates in $O(n^2)$ time (where $n$ is the number of ver
 - **2. Inner Loop (Up to $n-1$ iterations):** For each extracted node, the robot scans all its adjacent neighbors to perform Relaxation. In the worst-case scenario (a complete graph where every node is connected to every other node), each node will have $n-1$ neighbors to check.
 
 $$n \text{ (Nodes)} \times (n-1) \text{ (Max Neighbors per Node)} = n^2 - n \approx O(n^2)$$
+
+# Kinematics
+
+Through Filtering (Kalman/Particle Filters), the robot can now estimate its current pose despite sensor noise. Through Graph-based Path Planning (Dijkstra’s Algorithm), it can determine the most efficient route to its destination.
+
+However, knowing where to go and where you are is not enough. A crucial question remains. **How does the robot actually move its body to follow that path?**
+
+This is where Kinematics comes in. While our high-level planners output abstract commands like "move to $(x, y)$," our hardware only understands low-level signals like "rotate the left wheel at $100\text{ RPM}$." Kinematics is the mathematical language that translates these high-level strategies into physical motion.
+
+**Kinematics is a subfield of mechanics that deals with the motion of bodies without considering the forces that cause the motion.** 
+
+## Forward Kinematics
+Forward kinematics is the process of calculating the robot’s overall position and orientation (often called the pose) based on known actuator positions or speeds.
+
+- **Q :** "If my left wheel spins at $X$ RPM and my right wheel spins at $Y$ RPM, where will my robot be after 5 seconds?"
+
+This is essential for Odometry, where the robot tracks its own movement over time by integrating wheel encoder data.
+
+## Inverse Kinematics
+Inverse kinematics is the opposite. It starts with a desired destination or target pose and calculates the specific actuator commands needed to get there.
+
+- **Q :** "I want my robot to move to coordinate $(x, y)$ with an orientation of $\theta$. How fast should each wheel spin to achieve this?".
+
+This is the foundation of Motion Control. When a path planner tells the robot to follow a specific trajectory, inverse kinematics translates that path into actual motor signals.
+
+## Mobile Robot kinematics
+
+Let's compare robot arm and mobile robot.
+
+<figure class="figure-center">
+  <img src="/posts/SLAM/arm_and_mobile.png" width="700">
+  <figcaption>Figure 15. Robot Arm and Mobile Robot</figcaption>
+</figure>
+
+Feature | Robot Arm | Mobile Robot
+--- | --- | ---
+Input (Joint Space) | $q_1, q_2, q_3, q_4$ (Joint Angles) | $v_L, v_R$ (Left/Right Wheel Velocities)
+End-Effector (Pose) | $x, y, \theta$ (Gripper Position/Orientation) | $x_R, y_R, \theta_R$ (Robot Center Pose)
+Physical Parameter | Link Lengths ($l_1, l_2, \ldots$) | Wheel Radius ($r$), Track Width ($b$)
+Forward Kinematics | Calculating Tip Pose from Joint Angles | Calculating Robot Trajectory from Wheel RPM
+Inverse Kinematics | Finding Joint Angles to reach a Target Point | Finding Wheel Velocities to reach a Target Pose
+Constraints | Limited by the Reach (Workspace) | Limited by Direction (Non-holonomic)
+
+Mobile robots present a unique set of challenges compared to fixed robotic arms.
+- **No Unique Mapping:** For robotic arms, joint angles map directly to a specific endpoint. In mobile robots, wheel encoder values do not map to a unique pose because factors like wheel slip can occur.
+- **Unbound Mobility:** Unlike arms fixed to a base, mobile robots move freely and "unbound" throughout their entire environment.
+- **No Direct Measurement:** There is no instantaneous way to measure a mobile robot's exact position (unlike an arm's end-effector).
+- **Integration Errors:** A robot’s position must be calculated by integrating its motion over time. Because this depends on the specific path taken, small measurement errors accumulate, leading to inaccuracies in the final position estimate.
+- **Kinematic Constraints:** Understanding mobile motion starts with the physical constraints of the wheels—such as the fact that standard wheels can roll forward but cannot slide sideways.
+
+### Differential Drive Mobile Robot
+
+The differential drive system is the most common and simplest drive mechanism for mobile robots. It consists of two wheels mounted on a common axis, each controlled by an independent motor.
+
+<figure class="figure-center">
+  <img src="/posts/SLAM/mobilerobot.png" width="600">
+  <figcaption>Figure 16. Mobile Robot</figcaption>
+</figure>
+
+- $r$: Radius of the wheels.
+- $b$: Distance between the two wheels (track width).
+- $P$: The center point of the robot (midpoint of the wheel axis).
+- $v_l(t), v_r(t)$: Linear velocities of the left and right wheels.
+- $\omega_l(t), \omega_r(t)$: Angular velocities of the left and right wheels.
+- $R$: Instantaneous curvature radius of the robot's trajectory.
+- $IC$ (or $ICC$): Instantaneous Center of Rotation.
+
+The linear velocity of each wheel is directly proportional to its angular velocity and radius:
+$$v_l(t) = r \cdot \omega_l(t), \quad v_r(t) = r \cdot \omega_r(t)$$
+
+From these, we can derive the linear velocity ($v$) and angular velocity ($\omega$) of the entire robot body:
+- **Linear Velocity ($v$):** The average speed of the two wheels.\
+$$v(t) = \frac{v_r(t) + v_l(t)}{2}$$
+
+- **Angular Velocity ($\omega$):** The difference in wheel speeds divided by the track width.
+$$\omega(t) = \frac{v_r(t) - v_l(t)}{b}$$
+
+#### Special Cases of Motion
+
+The behavior of the robot changes significantly based on the relative velocities of the wheels:
+- **Straight-line Motion ($v_l = v_r$):** When both wheels spin at the same speed, $\omega = 0$ and the robot moves in a straight line.
+- **Pure Rotation ($v_l = -v_r$):** When wheels spin at the same speed in opposite directions, $v = 0$ and the robot rotates in place around its center ($P$).
+- **Curved Path ($v_l \neq v_r$):** The robot follows a circular trajectory around the $IC$. This motion is highly sensitive to velocity errors; small deviations in wheel speed lead to different trajectories.
+
+#### Kinematic Model in the Global Frame
+To track the robot’s pose $[x, y, \theta]^T$ in the initial (global) frame, we integrate the velocities over time.
+The differential equations for the robot's pose are:
+$$\dot{x}(t) = v(t) \cdot \cos\theta(t)$$
+$$\dot{y}(t) = v(t) \cdot \sin\theta(t)$$
+$$\dot{\theta}(t) = \omega(t)$$
+
+The final position at time $t$ is calculated by integrating these equations:
+
+$$\begin{cases} x(t) = \int_{0}^{t} v(\tau) \cos\theta(\tau) d\tau \\\ y(t) = \int_{0}^{t} v(\tau) \sin\theta(\tau) d\tau \\\ \theta(t) = \int_{0}^{t} \omega(\tau) d\tau \end{cases}$$
